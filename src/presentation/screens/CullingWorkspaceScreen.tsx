@@ -9,7 +9,8 @@ import { ProgressBar } from '../components/ui/ProgressBar';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { PhotoThumbnail } from '../components/ui/PhotoThumbnail';
 import { calculateProgress } from '../../domain/services/ProgressCalculator';
-import { CheckCircle2, ArrowRight, ToggleLeft, ToggleRight, Layers, List, FileImage, HardDrive, MapPin, Settings } from 'lucide-react';
+import { AISettingsModal } from '../components/ui/AISettingsModal';
+import { CheckCircle2, ArrowRight, ToggleLeft, ToggleRight, Layers, List, FileImage, HardDrive, MapPin, Settings, Sparkles, Bot } from 'lucide-react';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -25,6 +26,12 @@ export const CullingWorkspaceScreen: React.FC = () => {
     session,
     categories,
     openCategoryModal,
+    aiSettings,
+    openAISettingsModal,
+    autoClassifyCurrentPhoto,
+    autoClassifyBatch,
+    isAIAnalyzing,
+    aiProgress,
     classifyCurrent,
     rateCurrent,
     nextPhoto,
@@ -111,6 +118,15 @@ export const CullingWorkspaceScreen: React.FC = () => {
             <Settings className="ws-tog-icon" />
             <span>Kategori</span>
           </button>
+          <button
+            type="button"
+            className="ws-toggle ai-btn"
+            onClick={openAISettingsModal}
+            title="Pengaturan AI Auto-Sort"
+          >
+            <Sparkles className="ws-tog-icon text-amber-900" />
+            <span>AI Settings</span>
+          </button>
           <button type="button" className="ws-toggle" onClick={toggleAutoAdvance}
             title="Auto-advance after classify">
             {session.autoAdvance ? <ToggleRight className="ws-tog-icon on" /> : <ToggleLeft className="ws-tog-icon" />}
@@ -175,7 +191,18 @@ export const CullingWorkspaceScreen: React.FC = () => {
             />
             <div className="ws-overlay-top">
               <span className="ws-counter">{session.currentIndex + 1} / {session.photos.length}</span>
-              <StatusBadge classification={currentDecision?.classification || null} size="md" />
+              <div className="flex items-center gap-2">
+                {currentDecision?.aiAnalysis && (
+                  <div
+                    className="ai-recommendation-chip"
+                    title={`Alasan AI: ${currentDecision.aiAnalysis.reasoning}`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-900" />
+                    <span>AI: {Math.round(currentDecision.aiAnalysis.confidence * 100)}% Match</span>
+                  </div>
+                )}
+                <StatusBadge classification={currentDecision?.classification || null} size="md" />
+              </div>
             </div>
             <div className="ws-overlay-bot">
               <span className="ws-filename">{currentPhoto.filename}</span>
@@ -237,6 +264,37 @@ export const CullingWorkspaceScreen: React.FC = () => {
                 onClick={() => classifyCurrent(cat.id)}
               />
             ))}
+
+            {/* AI Auto-Sort Action Buttons */}
+            {aiSettings.enabled && (
+              <div className="ai-actions-group">
+                <button
+                  type="button"
+                  className="ai-single-btn"
+                  onClick={autoClassifyCurrentPhoto}
+                  disabled={isAIAnalyzing}
+                  title="Klasifikasikan foto ini menggunakan AI Vision"
+                >
+                  <Sparkles className={`w-4 h-4 ${isAIAnalyzing ? 'animate-spin' : ''}`} />
+                  <span>{isAIAnalyzing ? 'Menganalisis...' : 'Auto-Sort AI'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="ai-batch-btn"
+                  onClick={autoClassifyBatch}
+                  disabled={isAIAnalyzing}
+                  title="Auto-Sort seluruh foto yang belum dikategorikan"
+                >
+                  <Bot className="w-4 h-4" />
+                  <span>
+                    {aiProgress
+                      ? `Batch (${aiProgress.current}/${aiProgress.total})`
+                      : 'Sort All with AI'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="ws-bot-row">
@@ -250,6 +308,9 @@ export const CullingWorkspaceScreen: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      <CategorySettingsModal />
+      <AISettingsModal />
 
 
       <style>{`
@@ -714,6 +775,64 @@ export const CullingWorkspaceScreen: React.FC = () => {
         }
 
         .ws-done-icon { width: 18px; height: 18px; }
+
+        .ai-recommendation-chip {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          background: #FEF3C7;
+          border: 2px solid var(--border-dark);
+          border-radius: var(--radius-sm);
+          font-weight: 800;
+          font-size: 0.75rem;
+          color: #1E1E24;
+          box-shadow: var(--shadow-sm);
+        }
+
+        .ai-btn {
+          background: #FEF3C7 !important;
+        }
+
+        .ai-actions-group {
+          display: flex;
+          gap: 8px;
+          margin-left: auto;
+        }
+
+        .ai-single-btn, .ai-batch-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          font-weight: 800;
+          font-size: 0.8rem;
+          border: 2.5px solid var(--border-dark);
+          border-radius: var(--radius-md);
+          box-shadow: var(--shadow-sm);
+          cursor: pointer;
+          transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+
+        .ai-single-btn {
+          background: #FDE047;
+          color: #1E1E24;
+        }
+
+        .ai-batch-btn {
+          background: #EDE9FE;
+          color: #1E1E24;
+        }
+
+        .ai-single-btn:hover:not(:disabled), .ai-batch-btn:hover:not(:disabled) {
+          transform: translate(-1px, -1px);
+          box-shadow: var(--shadow-md);
+        }
+
+        .ai-single-btn:disabled, .ai-batch-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
       `}</style>
     </div>
   );

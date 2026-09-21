@@ -10,6 +10,11 @@ export interface PhotoDecision {
    * Rating alone does NOT count as reviewed.
    */
   reviewed: boolean;
+  aiAnalysis?: {
+    recommendedClassificationId: string;
+    confidence: number;
+    reasoning: string;
+  };
   updatedAt: string;
 }
 

@@ -18,6 +18,9 @@ import { TauriFileSystemAdapter } from '../../infrastructure/adapters/TauriFileS
 import { IFileSystemAdapter } from '../../infrastructure/adapters/IFileSystemAdapter';
 import { LocalStorageSessionRepository, RecentFolder } from '../../infrastructure/adapters/LocalStorageSessionRepository';
 
+import { AISettings, DEFAULT_AI_SETTINGS } from '../../domain/models/AISettings';
+import { analyzePhotoWithAI } from '../../domain/services/AISortingService';
+
 export type ScreenView =
   | 'WELCOME'
   | 'SCANNING'
@@ -52,6 +55,12 @@ interface SortingSessionStoreState {
   recentFolders: RecentFolder[];
   categories: ClassificationMeta[];
   isCategoryModalOpen: boolean;
+
+  // AI State
+  aiSettings: AISettings;
+  isAISettingsModalOpen: boolean;
+  isAIAnalyzing: boolean;
+  aiProgress: { current: number; total: number } | null;
 
   // Dependency Injections
   fsAdapter: IFileSystemAdapter;
@@ -88,10 +97,19 @@ interface SortingSessionStoreState {
   updateCategory: (id: string, updates: Partial<ClassificationMeta>) => void;
   removeCategory: (id: string) => void;
   resetCategoriesToDefault: () => void;
+
+  // AI Actions
+  openAISettingsModal: () => void;
+  closeAISettingsModal: () => void;
+  setAISettings: (settings: Partial<AISettings>) => void;
+  autoClassifyCurrentPhoto: () => Promise<void>;
+  autoClassifyBatch: () => Promise<void>;
 }
 
 const fsAdapter = new TauriFileSystemAdapter();
 const sessionRepo = new LocalStorageSessionRepository();
+
+const LOCAL_AI_SETTINGS_KEY = 'fotosort_ai_settings';
 
 export const useSortingSessionStore = create<SortingSessionStoreState>((set, get) => ({
   session: null,
@@ -109,6 +127,11 @@ export const useSortingSessionStore = create<SortingSessionStoreState>((set, get
   recentFolders: [],
   categories: DEFAULT_CLASSIFICATIONS,
   isCategoryModalOpen: false,
+
+  aiSettings: DEFAULT_AI_SETTINGS,
+  isAISettingsModalOpen: false,
+  isAIAnalyzing: false,
+  aiProgress: null,
   fsAdapter,
   sessionRepo,
 
@@ -117,6 +140,15 @@ export const useSortingSessionStore = create<SortingSessionStoreState>((set, get
     const savedCategories = sessionRepo.loadCustomCategories();
     const categories = savedCategories && savedCategories.length > 0 ? savedCategories : DEFAULT_CLASSIFICATIONS;
     set({ categories });
+
+    try {
+      const rawAi = localStorage.getItem(LOCAL_AI_SETTINGS_KEY);
+      if (rawAi) {
+        set({ aiSettings: { ...DEFAULT_AI_SETTINGS, ...JSON.parse(rawAi) } });
+      }
+    } catch {
+      // ignore
+    }
 
     try {
       const savedSession = await sessionRepo.loadActiveSession();
@@ -536,5 +568,166 @@ export const useSortingSessionStore = create<SortingSessionStoreState>((set, get
     } catch {
       set({ hasSavedSession: false });
     }
+  },
+
+  // AI Actions Implementation
+  openAISettingsModal: () => set({ isAISettingsModalOpen: true }),
+  closeAISettingsModal: () => set({ isAISettingsModalOpen: false }),
+
+  setAISettings: (newSettings) => {
+    const updated = { ...get().aiSettings, ...newSettings };
+    set({ aiSettings: updated });
+    try {
+      localStorage.setItem(LOCAL_AI_SETTINGS_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  },
+
+  autoClassifyCurrentPhoto: async () => {
+    const { session, categories, aiSettings, fsAdapter } = get();
+    if (!session) return;
+    const currentPhoto = session.photos[session.currentIndex];
+    if (!currentPhoto) return;
+
+    if (!aiSettings.apiKey) {
+      set({ isAISettingsModalOpen: true });
+      return;
+    }
+
+    set({ isAIAnalyzing: true, error: null });
+
+    try {
+      // Get base64 or URL representation of image
+      let base64 = currentPhoto.fullUrl || currentPhoto.thumbnailUrl || '';
+      if (!base64.startsWith('data:image')) {
+        base64 = await fsAdapter.generateThumbnail(currentPhoto.sourcePath, 800);
+      }
+
+      const result = await analyzePhotoWithAI(base64, categories, aiSettings);
+
+      const currentDecision = session.decisions[currentPhoto.id] || {
+        photoId: currentPhoto.id,
+        classification: null,
+        rating: null,
+        reviewed: false,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updatedDecision = {
+        ...currentDecision,
+        aiAnalysis: {
+          recommendedClassificationId: result.recommendedClassificationId,
+          confidence: result.confidence,
+          reasoning: result.reasoning,
+        },
+        // Auto-assign classification if confidence meets threshold
+        classification:
+          result.confidence >= aiSettings.autoConfidenceThreshold
+            ? result.recommendedClassificationId
+            : currentDecision.classification,
+        reviewed:
+          result.confidence >= aiSettings.autoConfidenceThreshold
+            ? true
+            : currentDecision.reviewed,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updatedDecisions = {
+        ...session.decisions,
+        [currentPhoto.id]: updatedDecision,
+      };
+
+      const updatedSession = {
+        ...session,
+        decisions: updatedDecisions,
+        updatedAt: new Date().toISOString(),
+      };
+
+      set({ session: updatedSession, isAIAnalyzing: false });
+    } catch (err: any) {
+      set({
+        isAIAnalyzing: false,
+        error: `Auto-Sort AI Gagal: ${err.message || err}`,
+      });
+    }
+  },
+
+  autoClassifyBatch: async () => {
+    const { session, categories, aiSettings, fsAdapter } = get();
+    if (!session) return;
+
+    if (!aiSettings.apiKey) {
+      set({ isAISettingsModalOpen: true });
+      return;
+    }
+
+    const unclassifiedPhotos = session.photos.filter((p) => {
+      const dec = session.decisions[p.id];
+      return !dec || !dec.classification;
+    });
+
+    if (unclassifiedPhotos.length === 0) return;
+
+    set({
+      isAIAnalyzing: true,
+      aiProgress: { current: 0, total: unclassifiedPhotos.length },
+      error: null,
+    });
+
+    let updatedDecisions = { ...session.decisions };
+
+    for (let i = 0; i < unclassifiedPhotos.length; i++) {
+      const photo = unclassifiedPhotos[i];
+      set({ aiProgress: { current: i + 1, total: unclassifiedPhotos.length } });
+
+      try {
+        let base64 = photo.fullUrl || photo.thumbnailUrl || '';
+        if (!base64.startsWith('data:image')) {
+          base64 = await fsAdapter.generateThumbnail(photo.sourcePath, 600);
+        }
+
+        const result = await analyzePhotoWithAI(base64, categories, aiSettings);
+        const currentDecision = updatedDecisions[photo.id] || {
+          photoId: photo.id,
+          classification: null,
+          rating: null,
+          reviewed: false,
+          updatedAt: new Date().toISOString(),
+        };
+
+        updatedDecisions[photo.id] = {
+          ...currentDecision,
+          aiAnalysis: {
+            recommendedClassificationId: result.recommendedClassificationId,
+            confidence: result.confidence,
+            reasoning: result.reasoning,
+          },
+          classification:
+            result.confidence >= aiSettings.autoConfidenceThreshold
+              ? result.recommendedClassificationId
+              : currentDecision.classification,
+          reviewed:
+            result.confidence >= aiSettings.autoConfidenceThreshold
+              ? true
+              : currentDecision.reviewed,
+          updatedAt: new Date().toISOString(),
+        };
+      } catch (err) {
+        console.warn(`AI batch error for photo ${photo.filename}:`, err);
+      }
+    }
+
+    const updatedSession = {
+      ...session,
+      decisions: updatedDecisions,
+      updatedAt: new Date().toISOString(),
+    };
+
+    set({
+      session: updatedSession,
+      isAIAnalyzing: false,
+      aiProgress: null,
+    });
   },
 }));
