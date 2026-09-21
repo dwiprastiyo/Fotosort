@@ -570,11 +570,6 @@ export const useSortingSessionStore = create<SortingSessionStoreState>((set, get
     }
   },
 
-  openRecentFolder: async (folderPath: string) => {
-    const { scanFolder } = get();
-    await scanFolder(folderPath);
-  },
-
   // AI Actions Implementation
   openAISettingsModal: () => set({ isAISettingsModalOpen: true }),
   closeAISettingsModal: () => set({ isAISettingsModalOpen: false }),

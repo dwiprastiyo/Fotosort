@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useSortingSessionStore } from '../../application/stores/useSortingSessionStore';
 import { DEFAULT_CLASSIFICATIONS } from '../../domain/models/Classification';
 import { PortfolioRating } from '../../domain/models/PortfolioRating';
@@ -80,15 +80,6 @@ export const CullingWorkspaceScreen: React.FC = () => {
   const currentDecision = currentPhoto ? session.decisions[currentPhoto.id] : undefined;
 
   const progress = calculateProgress(session);
-  const thumbnailItemHeight = 82;
-  const thumbnailWindowSize = 36;
-  const thumbnailBuffer = 8;
-  const maxStart = Math.max(0, session.photos.length - thumbnailWindowSize);
-  const scrollStart = Math.max(0, Math.floor(railScrollTop / thumbnailItemHeight) - thumbnailBuffer);
-  const currentStart = Math.max(0, session.currentIndex - thumbnailBuffer);
-  const thumbnailStart = Math.min(maxStart, Math.max(scrollStart, currentStart));
-  const thumbnailEnd = Math.min(session.photos.length, thumbnailStart + thumbnailWindowSize);
-  const visiblePhotos = session.photos.slice(thumbnailStart, thumbnailEnd);
 
   return (
     <div className="ws">
