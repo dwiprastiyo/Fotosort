@@ -20,7 +20,6 @@ function formatFileSize(bytes: number): string {
 }
 
 export const CullingWorkspaceScreen: React.FC = () => {
-  const [railScrollTop, setRailScrollTop] = useState(0);
   const railRef = useRef<HTMLDivElement>(null);
   const {
     session,
@@ -218,19 +217,12 @@ export const CullingWorkspaceScreen: React.FC = () => {
             <span><List className="ws-rail-icon" /> Foto</span>
             <span className="ws-rail-count">{session.photos.length}</span>
           </div>
-          <div
-            className="ws-thumb-list"
-            ref={railRef}
-            onScroll={(event) => setRailScrollTop(event.currentTarget.scrollTop)}
-          >
-            <div style={{ height: thumbnailStart * thumbnailItemHeight, flexShrink: 0 }} />
-            {visiblePhotos.map((photo, visibleIndex) => {
-              const index = thumbnailStart + visibleIndex;
-              return (
+          <div className="ws-thumb-list" ref={railRef}>
+            {session.photos.map((photo, index) => (
               <div
                 className="ws-thumb-item"
                 key={photo.id}
-                ref={index === session.currentIndex ? (element) => element?.scrollIntoView({ block: 'nearest' }) : undefined}
+                ref={index === session.currentIndex ? (element) => element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) : undefined}
               >
                 <span className="ws-thumb-index">{index + 1}</span>
                 <PhotoThumbnail
@@ -241,9 +233,7 @@ export const CullingWorkspaceScreen: React.FC = () => {
                   size="md"
                 />
               </div>
-              );
-            })}
-            <div style={{ height: Math.max(0, session.photos.length - thumbnailEnd) * thumbnailItemHeight, flexShrink: 0 }} />
+            ))}
           </div>
           <div className="ws-rail-nav">
             <button type="button" className="ws-rail-btn" onClick={prevPhoto} disabled={session.currentIndex === 0} title="Foto sebelumnya">↑</button>

@@ -142,14 +142,25 @@ export const AISettingsModal: React.FC = () => {
 
           {/* Model selection */}
           <div className="field-group">
-            <label className="field-label">Model Nama</label>
-            <input
-              type="text"
+            <label className="field-label">Versi Model AI</label>
+            <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="e.g. gemini-1.5-flash"
-              className="input-neubrutal text-sm font-mono"
-            />
+              className="input-neubrutal text-sm font-mono cursor-pointer"
+            >
+              {provider === 'gemini' ? (
+                <>
+                  <option value="gemini-1.5-flash">gemini-1.5-flash (Direkomendasikan - Sangat Cepat)</option>
+                  <option value="gemini-1.5-pro">gemini-1.5-pro (Analisis Sangat Mendalam)</option>
+                  <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Model Terbaru)</option>
+                </>
+              ) : (
+                <>
+                  <option value="gpt-4o-mini">gpt-4o-mini (Cepat & Hemat Token)</option>
+                  <option value="gpt-4o">gpt-4o (Akurasi Maksimal)</option>
+                </>
+              )}
+            </select>
           </div>
 
           {/* Confidence threshold */}
